@@ -4,9 +4,20 @@ from seleniumbase import sb_cdp
 import getpass
 import time
 import glob
+import os
+import sys
 
-email    = input('📧 Email MyFitnessPal : ')
-password = getpass.getpass('🔑 Mot de passe (masqué) : ')
+# --- REMPLACE TES ANCIENS INPUTS PAR CECI ---
+email = os.environ.get('MFP_EMAIL')
+password = os.environ.get('MFP_PASSWORD')
+
+if not email or not password:
+    print("❌ Erreur : Les secrets MFP_EMAIL ou MFP_PASSWORD ne sont pas configurés dans GitHub.")
+    sys.exit(1)
+# --------------------------------------------
+
+# Force aussi le mode headless pour GitHub (pas d'écran)
+sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
 
 # Trouve le chromium installé par Playwright
 chrome_paths = glob.glob('/home/codespace/.cache/ms-playwright/**/chrome', recursive=True) + \
