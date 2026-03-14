@@ -1,0 +1,27 @@
+mkdir -p .github/workflows
+cat > .github/workflows/run.yml << 'EOF'
+name: Update Diete
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 22 * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install gspread google-auth seleniumbase playwright beautifulsoup4 lxml
+          playwright install --with-deps chromium
+      - name: Run Script
+        run: xvfb-run --server-args="-screen 0 1280x1024x24" python main.py
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          MFP_EMAIL: ${{ secrets.MFP_EMAIL }}
+          MFP_PASSWORD: ${{ secrets.MFP_PASSWORD }}
+EOF
