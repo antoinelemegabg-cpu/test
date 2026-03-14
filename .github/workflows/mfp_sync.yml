@@ -18,11 +18,22 @@ jobs:
       - name: Installer les dépendances
         run: |
           pip install playwright seleniumbase beautifulsoup4 lxml gspread google-auth
+          # Installation du navigateur ET des dépendances système Linux (libgbm, libnss3, etc.)
           playwright install chromium
+          sudo playwright install-deps chromium 
 
       - name: Exécuter le script
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           MFP_EMAIL: ${{ secrets.MFP_EMAIL }}
           MFP_PASSWORD: ${{ secrets.MFP_PASSWORD }}
+        # On lance le script. Note: Assure-toi que ton script python 
+        # utilise os.environ.get('MFP_EMAIL') au lieu de input()
         run: python mfp_automation.py
+
+      - name: Sauvegarder les captures d'écran en cas d'erreur
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-debug
+          path: screenshot_*.png
