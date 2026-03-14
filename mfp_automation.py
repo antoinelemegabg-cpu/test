@@ -26,13 +26,13 @@ def scrape_diary(page):
     soup = bs(html, 'lxml')
     try:
         td = soup.find_all('td', class_='first')
-        if not td:
-             print("⚠️ Structure HTML non reconnue ou page vide.")
-             return None
+        if len(td) < 4: 
+            print("⚠️ Données non trouvées. Vérifie si la page est bien chargée.")
+            return None
         return (td[0].get_text(strip=True), td[3].get_text(strip=True), 
                 td[1].get_text(strip=True), td[2].get_text(strip=True))
     except Exception as e:
-        print(f"❌ Erreur scraping: {e}")
+        print(f"❌ Erreur scraping : {e}")
         return None
 
 def main():
@@ -44,6 +44,7 @@ def main():
                    glob.glob('/usr/bin/google-chrome', recursive=True)
     chrome_path = chrome_paths[0] if chrome_paths else None
 
+    # Initialisation de SeleniumBase CDP
     sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
     endpoint_url = sb.get_endpoint_url()
 
@@ -52,21 +53,15 @@ def main():
             browser = p.chromium.connect_over_cdp(endpoint_url)
             page = browser.contexts[0].pages[0]
 
-            print('🌐 Accès MyFitnessPal...')
+            print('🌐 Connexion MyFitnessPal...')
             page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='domcontentloaded')
             
-            # --- FIX COOKIES : On force la suppression des éléments bloquants ---
-            print('🍪 Neutralisation des cookies...')
-            try:
-                # Tentative de clic standard sur l'iframe
-                iframe = page.frame_locator('iframe[id^="sp_message_iframe"]')
-                iframe.get_by_role("button", name=["Accepter", "Accept", "Accept All"]).click(timeout=5000)
-            except:
-                # Si ça échoue, on supprime carrément les bannières via JavaScript
-                page.evaluate('() => { document.querySelectorAll(\'[id^="sp_message_container"]\').forEach(el => el.remove()); }')
-                print("⚠️ Bannières cookies supprimées par injection JS.")
+            # --- SOLUTION AU TIMEOUT : Supprimer les cookies de force ---
+            print('🍪 Neutralisation de la bannière cookies...')
+            page.evaluate('() => { const el = document.querySelector("[id^=\'sp_message_container\']"); if(el) el.remove(); }')
+            time.sleep(1)
 
-            # Gestion Captcha via SeleniumBase
+            # Résoudre le captcha si besoin
             sb.solve_captcha()
             
             print('✍️ Saisie des identifiants...')
@@ -74,11 +69,11 @@ def main():
             page.fill('#email', email)
             page.fill('#password', password)
             
-            # --- FIX CLIC : On utilise dispatch_event pour ignorer les obstacles visuels ---
-            print('🔓 Tentative de connexion...')
+            # Utilisation de dispatch_event pour cliquer même si c'est "obstrué"
+            print('🔓 Clic sur Connexion...')
             page.locator("button[type='submit']").dispatch_event('click')
 
-            print('⏳ Attente redirection...')
+            # Attendre la redirection
             page.wait_for_url('**/food/diary**', timeout=30000)
             time.sleep(5) 
 
@@ -92,15 +87,15 @@ def main():
                 ws.update([[lip]], "L12")
                 ws.update([[glu]], "M12")
                 ws.update([[prot]], "C12")
-                print(f"✅ Succès ! Données envoyées : {cal} kcal.")
+                print(f"✅ RÉUSSI : {cal} kcal envoyées à Google Sheets.")
 
     except Exception as e:
-        print(f"❌ Erreur critique : {e}")
+        print(f"❌ ERREUR : {e}")
     finally:
-        # Nettoyage sécurisé
+        # Fermeture sécurisée sans AttributeError
         try:
             if 'browser' in locals(): browser.close()
-            # On utilise une méthode de fermeture plus universelle pour sb
+            # On vérifie si sb a la méthode stop (seleniumbase récent) ou quit
             if hasattr(sb, 'stop'): sb.stop()
             elif hasattr(sb, 'quit'): sb.quit()
         except:
