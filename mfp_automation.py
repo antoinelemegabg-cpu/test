@@ -25,26 +25,29 @@ def scrape_diary(page):
     html = page.content()
     soup = bs(html, 'lxml')
     try:
+        # On cherche les cellules de résumé en bas du tableau
         td = soup.find_all('td', class_='first')
-        if len(td) < 4: 
-            print("⚠️ Données nutritionnelles non trouvées dans le HTML.")
-            return None
-        return (td[0].string.strip(), td[3].string.strip(), 
-                td[1].string.strip(), td[2].string.strip())
+        if not td:
+             print("⚠️ Structure HTML non reconnue.")
+             return None
+        # Cal, Prot, Lip, Glu (ordre basé sur ta logique)
+        return (td[0].get_text(strip=True), td[3].get_text(strip=True), 
+                td[1].get_text(strip=True), td[2].get_text(strip=True))
     except Exception as e:
-        print(f"❌ Erreur BS4: {e}")
+        print(f"❌ Erreur scraping: {e}")
         return None
 
 def main():
     email = os.environ.get('MFP_EMAIL') or input('📧 Email : ')
     password = os.environ.get('MFP_PASSWORD') or getpass.getpass('🔑 Password : ')
 
+    # Detection Chrome
     chrome_paths = glob.glob('/home/codespace/.cache/ms-playwright/**/chrome', recursive=True) + \
                    glob.glob('/root/.cache/ms-playwright/**/chrome', recursive=True) + \
                    glob.glob('/usr/bin/google-chrome', recursive=True)
     chrome_path = chrome_paths[0] if chrome_paths else None
 
-    # Initialisation
+    # On lance en headless pour GitHub
     sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
     endpoint_url = sb.get_endpoint_url()
 
@@ -53,20 +56,22 @@ def main():
             browser = p.chromium.connect_over_cdp(endpoint_url)
             page = browser.contexts[0].pages[0]
 
-            print('🌐 Accès à MyFitnessPal...')
-            page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='networkidle')
+            print('🌐 Accès MyFitnessPal...')
+            page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='domcontentloaded')
             
-            # --- CORRECTION 1 : ACCEPTER LES COOKIES (IFRAME) ---
-            print('🍪 Gestion des cookies...')
+            # --- FIX COOKIES : On force la suppression de la bannière ---
+            print('🍪 Suppression des cookies...')
             try:
-                # On attend que l'iframe soit là et on clique sur "Accepter"
-                page.frame_locator('iframe[title*="Consent"]').get_by_role("button", name="Accepter").click(timeout=5000)
+                # On essaie de cliquer sur accepter si l'iframe est là
+                iframe = page.frame_locator('iframe[id^="sp_message_iframe"]')
+                iframe.get_by_role("button", name=["Accepter", "Accept", "Accept All"]).click(timeout=5000)
                 print("✅ Cookies acceptés.")
             except:
-                print("ℹ️ Pas de bannière de cookies détectée.")
+                # Si le clic échoue, on force la suppression de l'élément HTML pour libérer l'écran
+                page.evaluate('() => { document.querySelectorAll(\'[id^="sp_message_container"]\').forEach(el => el.remove()); }')
+                print("⚠️ Bannière cookies masquée par script.")
 
-            # --- CORRECTION 2 : CAPTCHA & LOGIN ---
-            print('🤖 Vérification Cloudflare...')
+            # Gestion Captcha
             sb.solve_captcha()
             
             print('✍️ Saisie des identifiants...')
@@ -74,10 +79,10 @@ def main():
             page.fill('#email', email)
             page.fill('#password', password)
             
-            # On utilise force=True pour cliquer même si quelque chose gêne encore
-            page.click("button[type='submit']", force=True)
+            # On utilise dispatch_event('click') qui contourne les interceptions d'iframe
+            page.locator("button[type='submit']").dispatch_event('click')
 
-            print('⏳ Attente de redirection...')
+            print('⏳ Attente redirection...')
             page.wait_for_url('**/food/diary**', timeout=30000)
             time.sleep(5) 
 
@@ -91,19 +96,20 @@ def main():
                 ws.update([[lip]], "L12")
                 ws.update([[glu]], "M12")
                 ws.update([[prot]], "C12")
-                print("✅ Données synchronisées avec succès !")
-    
+                print(f"✅ Terminé ! Macros : {cal}kcal, {prot}p")
+
     except Exception as e:
-        print(f"❌ Erreur durant l'exécution : {e}")
+        print(f"❌ Erreur : {e}")
     finally:
-        # CORRECTION 3 : Fermeture propre pour sb_cdp
+        # Fermeture sécurisée sans erreur d'attribut
         try:
-            browser.close()
-            # Si sb.quit() n'existe pas, on ignore
-            if hasattr(sb, 'quit'): sb.quit()
+            if 'browser' in locals(): browser.close()
+            # On stoppe seleniumbase proprement
+            if hasattr(sb, 'stop'): sb.stop()
+            elif hasattr(sb, 'quit'): sb.quit()
         except:
             pass
-        print("👋 Session fermée.")
+        print("👋 Session terminée.")
 
 if __name__ == "__main__":
     main()
