@@ -21,6 +21,7 @@ jobs:
 
       - name: 2. Installer Navigateur Chromium
         run: python -m playwright install chromium
+        run: pip install gspread google-auth
 
       - name: 3. Installer Dépendances Système (Sudo Fix)
         # C'est souvent ici que ça coince sur Linux sans écran
