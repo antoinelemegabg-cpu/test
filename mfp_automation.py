@@ -42,4 +42,19 @@ def run_sync():
             # 4. Vérification finale
             sb.save_screenshot("screenshot_3_apres_login.png")
             
-            if
+            if "dashboard" in sb.get_current_url() or sb.is_element_visible('nav'):
+                print("✅ Connexion réussie !")
+            else:
+                print("❌ Échec de la connexion. Regarde le screenshot_3 pour voir l'erreur.")
+
+            # --- AJOUTE TON CODE DE SYNC ICI (GSPREAD / BEAUTIFULSOUP) ---
+            print("📊 Début de l'extraction des données...")
+            # ... ton code existant ...
+
+        except Exception as e:
+            print(f"💥 CRASH DU SCRIPT : {e}")
+            sb.save_screenshot("screenshot_ERROR_CRASH.png")
+            raise e
+
+if __name__ == "__main__":
+    run_sync()
