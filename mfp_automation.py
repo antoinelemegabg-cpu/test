@@ -1,60 +1,45 @@
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 import os
 import sys
-import time
-from seleniumbase import SB
 
-def run_sync():
-    # 1. Récupération des identifiants depuis les secrets GitHub
-    email = os.environ.get('MFP_EMAIL')
-    password = os.environ.get('MFP_PASSWORD')
+# Valeurs de test
+calorie, proteine, lipide, glucide = "1234", "55", "66", "77"
 
-    if not email or not password:
-        print("❌ ERREUR : Les secrets MFP_EMAIL ou MFP_PASSWORD sont vides.")
+print("🚀 TEST GOOGLE SHEETS via Secret GitHub")
+
+try:
+    # 1. On récupère le secret depuis les variables d'environnement
+    # GitHub stocke les secrets dans os.environ
+    secret_json = os.environ.get("GOOGLE_CREDENTIALS")
+
+    if not secret_json:
+        print("\n❌ ERREUR : Le secret 'GOOGLE_CREDENTIALS' est vide ou introuvable.")
+        print("💡 Solution : Tape la commande suivante dans ton terminal avant de relancer :")
+        print("export GOOGLE_CREDENTIALS='ton_json_complet_ici'")
         sys.exit(1)
 
-    # 2. Lancement de SeleniumBase avec le mode Anti-Détection (UC)
-    # On utilise context manager "with" pour s'assurer que le navigateur se ferme bien
-    with SB(uc=True, headless=True, slow_mode=True) as sb:
-        try:
-            print("🚀 Démarrage du navigateur...")
-            url = "https://www.myfitnesspal.com/account/login"
-            sb.uc_open_with_reconnect(url, 4)
-            
-            # Petit temps d'attente pour laisser passer Cloudflare
-            time.sleep(5)
-            sb.save_screenshot("screenshot_1_page_chargement.png")
+    # 2. Setup Google Auth
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds_dict = json.loads(secret_json)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc = gspread.authorize(creds)
 
-            # 3. Tentative de connexion
-            print("🔑 Tentative de connexion...")
-            
-            # On attend que le champ email soit visible
-            if sb.is_element_visible('input#email'):
-                sb.type('input#email', email)
-                sb.type('input#password', password)
-                sb.save_screenshot("screenshot_2_champs_remplis.png")
-                
-                sb.click('button[type="submit"]')
-                print("Wait... redirection après login.")
-                time.sleep(10)
-            else:
-                print("⚠️ Champ login non trouvé. Possible blocage Cloudflare (Vérifie le screenshot_1).")
+    # 3. Accès au sheet
+    print("📂 Ouverture du tableur 'diete'...")
+    sh = gc.open("diete")
+    ws = sh.sheet1
 
-            # 4. Vérification finale
-            sb.save_screenshot("screenshot_3_apres_login.png")
-            
-            if "dashboard" in sb.get_current_url() or sb.is_element_visible('nav'):
-                print("✅ Connexion réussie !")
-            else:
-                print("❌ Échec de la connexion. Regarde le screenshot_3 pour voir l'erreur.")
+    # 4. Envoi des données
+    print("✍️ Mise à jour des cellules...")
+    ws.update([[calorie]], "D12")
+    ws.update([[lipide]], "L12")
+    ws.update([[glucide]], "M12")
+    ws.update([[proteine]], "C12")
 
-            # --- AJOUTE TON CODE DE SYNC ICI (GSPREAD / BEAUTIFULSOUP) ---
-            print("📊 Début de l'extraction des données...")
-            # ... ton code existant ...
+    print("\n✅ RÉUSSI : Ton Google Sheet a été mis à jour !")
 
-        except Exception as e:
-            print(f"💥 CRASH DU SCRIPT : {e}")
-            sb.save_screenshot("screenshot_ERROR_CRASH.png")
-            raise e
-
-if __name__ == "__main__":
-    run_sync()
+except Exception as e:
+    print(f"\n❌ ÉCHEC : {e}")
+python test_sheets_final.py
