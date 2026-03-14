@@ -27,9 +27,11 @@ def scrape_diary(page):
     try:
         td = soup.find_all('td', class_='first')
         if not td: return None
+        # Cal, Prot, Lip, Glu
         return (td[0].get_text(strip=True), td[3].get_text(strip=True), 
                 td[1].get_text(strip=True), td[2].get_text(strip=True))
-    except:
+    except Exception as e:
+        print(f"❌ Erreur scraping: {e}")
         return None
 
 def main():
@@ -41,6 +43,7 @@ def main():
                    glob.glob('/usr/bin/google-chrome', recursive=True)
     chrome_path = chrome_paths[0] if chrome_paths else None
 
+    # On lance en headless pour GitHub
     sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
     endpoint_url = sb.get_endpoint_url()
 
@@ -49,9 +52,56 @@ def main():
             browser = p.chromium.connect_over_cdp(endpoint_url)
             page = browser.contexts[0].pages[0]
 
-            print('🌐 Connexion MyFitnessPal...')
+            print('🌐 Accès MyFitnessPal...')
             page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='domcontentloaded')
             
-            # --- FIX COOKIES : ON SUPPRIME LA BANNIÈRE DU CODE ---
-            print('🍪 Neutralisation de la bannière cookies...')
-            page.evaluate('() => { const el = document.querySelector("[id^=\'sp_message_container\']
+            # --- ACTION BULLDOZER : Supprimer la bannière de cookies du DOM ---
+            print('🍪 Nettoyage forcé des bannières bloquantes...')
+            page.evaluate('() => { const el = document.querySelector("[id^=\'sp_message_container\']"); if(el) el.remove(); }')
+            time.sleep(2)
+
+            # Résolution captcha via SeleniumBase
+            print('🤖 Vérification Captcha...')
+            sb.solve_captcha()
+            
+            print('✍️ Saisie des identifiants...')
+            page.wait_for_selector('#email', timeout=15000)
+            page.fill('#email', email)
+            page.fill('#password', password)
+            
+            # --- ACTION FORCE : Utiliser dispatch_event pour cliquer malgré les obstacles ---
+            print('🔓 Clic sur Connexion...')
+            page.locator("button[type='submit']").dispatch_event('click')
+
+            print('⏳ Attente de redirection...')
+            page.wait_for_url('**/food/diary**', timeout=30000)
+            time.sleep(5) 
+
+            macros = scrape_diary(page)
+            if macros:
+                cal, prot, lip, glu = macros
+                gc = get_google_sheets_client()
+                sh = gc.open("diete")
+                ws = sh.sheet1
+                print("📤 Mise à jour Google Sheets...")
+                ws.update([[cal]], "D12")
+                ws.update([[lip]], "L12")
+                ws.update([[glu]], "M12")
+                ws.update([[prot]], "C12")
+                print(f"✅ RÉUSSI : {cal} kcal transférées.")
+            else:
+                print("❌ Échec : Données non trouvées sur la page.")
+
+    except Exception as e:
+        print(f"❌ ERREUR CRITIQUE : {e}")
+    finally:
+        # Fermeture sécurisée
+        try:
+            if 'browser' in locals(): browser.close()
+            if hasattr(sb, 'stop'): sb.stop()
+            elif hasattr(sb, 'quit'): sb.quit()
+        except:
+            pass
+        print("👋 Session terminée.")
+
+if __name__ == "__
