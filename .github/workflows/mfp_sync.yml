@@ -23,9 +23,7 @@ jobs:
         run: python -m playwright install chromium
         run: pip install gspread google-auth
 
-      - name: 3. Installer Dépendances Système (Sudo Fix)
-        # C'est souvent ici que ça coince sur Linux sans écran
-        run: sudo $(which python) -m playwright install-deps chromium
+
 
       - name: 4. Exécuter le script MyFitnessPal
         env:
