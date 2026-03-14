@@ -1,42 +1,30 @@
-name: MyFitnessPal Sync
-
+name: Update Diete
 on:
   workflow_dispatch:
-
 jobs:
-  run-sync:
+  update:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v4
-
-      - name: Installer Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-
-      - name: 1. Installer Librairies Python
-        run: pip install playwright seleniumbase beautifulsoup4 lxml gspread google-auth
-
-      - name: 2. Installer Navigateur Chromium
-        run: python -m playwright install chromium
-        run: pip install gspread google-auth
-
-
-
-      - name: 4. Exécuter le script MyFitnessPal
+          python-version: '3.11'
+      - name: Installer les dépendances
+        run: |
+          pip install gspread google-auth seleniumbase playwright beautifulsoup4 lxml
+          playwright install chromium
+      - name: Installer les libs système pour Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 xvfb
+      - name: Lancer Xvfb
+        run: |
+          Xvfb :99 -screen 0 1280x800x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      - name: Lancer le script
+        run: python main.py
         env:
+          DISPLAY: :99
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           MFP_EMAIL: ${{ secrets.MFP_EMAIL }}
           MFP_PASSWORD: ${{ secrets.MFP_PASSWORD }}
-        run: python mfp_automation.py
-
-      - name: 5. Upload Screenshots si erreur
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-results
-          path: |
-            *.png
-            *.log
