@@ -1,7 +1,7 @@
 name: MyFitnessPal Sync
 
 on:
-  workflow_dispatch: # Permet de lancer le script manuellement
+  workflow_dispatch: # Bouton manuel dans l'onglet Actions
 
 jobs:
   run-sync:
@@ -15,27 +15,29 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip' # Accélère les prochains lancements
+          cache: 'pip'
 
-      - name: Installer les dépendances
+      - name: Installer les dépendances Python
         run: |
           pip install playwright seleniumbase beautifulsoup4 lxml gspread google-auth
-          # Installe le navigateur
+          # Installe le navigateur pour l'utilisateur courant
           python -m playwright install chromium
-          # Installe les librairies système nécessaires (fix pour l'erreur précédente)
+
+      - name: Installer les dépendances système (Fix Sudo)
+        # On utilise "python -m" avec sudo pour éviter l'erreur "command not found"
+        run: |
           sudo $(which python) -m playwright install-deps chromium
 
-      - name: Exécuter le script MyFitnessPal
+      - name: Exécuter le script
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           MFP_EMAIL: ${{ secrets.MFP_EMAIL }}
           MFP_PASSWORD: ${{ secrets.MFP_PASSWORD }}
         run: python mfp_automation.py
 
-      - name: Sauvegarder les screenshots (Debug)
-        if: always() # S'exécute même si le script plante
+      - name: Sauvegarder les captures d'écran (Debug)
+        if: always() # Récupère les images même si le login échoue
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-debug
           path: screenshot_*.png
-          retention-days: 5
