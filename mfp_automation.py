@@ -1,111 +1,45 @@
-cat > mfp_login.py << 'EOF'
-from playwright.sync_api import sync_playwright
-from seleniumbase import sb_cdp
-import getpass
-import time
-import glob
 import os
 import sys
+import time
+from seleniumbase import SB
 
-# --- REMPLACE TES ANCIENS INPUTS PAR CECI ---
-email = os.environ.get('MFP_EMAIL')
-password = os.environ.get('MFP_PASSWORD')
+def run_sync():
+    # 1. Récupération des identifiants depuis les secrets GitHub
+    email = os.environ.get('MFP_EMAIL')
+    password = os.environ.get('MFP_PASSWORD')
 
-if not email or not password:
-    print("❌ Erreur : Les secrets MFP_EMAIL ou MFP_PASSWORD ne sont pas configurés dans GitHub.")
-    sys.exit(1)
-# --------------------------------------------
+    if not email or not password:
+        print("❌ ERREUR : Les secrets MFP_EMAIL ou MFP_PASSWORD sont vides.")
+        sys.exit(1)
 
-# Force aussi le mode headless pour GitHub (pas d'écran)
-sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
-
-# Trouve le chromium installé par Playwright
-chrome_paths = glob.glob('/home/codespace/.cache/ms-playwright/**/chrome', recursive=True) + \
-               glob.glob('/home/codespace/.cache/ms-playwright/**/chrome-linux64/chrome', recursive=True) + \
-               glob.glob('/root/.cache/ms-playwright/**/chrome', recursive=True)
-
-chrome_path = chrome_paths[0] if chrome_paths else None
-print(f'🔍 Chrome trouvé : {chrome_path}')
-
-print('\n🚀 Lancement du navigateur...')
-sb = sb_cdp.Chrome(headless=False, xvfb=True, browser_executable_path=chrome_path)
-endpoint_url = sb.get_endpoint_url()
-
-with sync_playwright() as p:
-    browser = p.chromium.connect_over_cdp(endpoint_url)
-    context = browser.contexts[0]
-    page = context.pages[0]
-
-    # ── ÉTAPE 1 : Charger la page ─────────────────────────────────────────────
-    print('🌐 Ouverture de MyFitnessPal...')
-    page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='domcontentloaded', timeout=60000)
-    time.sleep(3)
-    page.screenshot(path='screenshot_1_login_page.png')
-    print('📸 Screenshot 1 sauvegardé')
-
-    # ── ÉTAPE 2 : Accepter les cookies ────────────────────────────────────────
-    print('🍪 Fermeture de la popup cookies...')
-    try:
-        iframe = page.frame_locator('#sp_message_iframe_1182771')
-        for text in ['Accept All', 'Accepter tout', 'Accept', 'Accepter']:
-            try:
-                iframe.get_by_role('button', name=text).click(timeout=3000)
-                print(f'🍪 Cookies acceptés ({text})')
-                time.sleep(2)
-                break
-            except Exception:
-                pass
-    except Exception:
-        print('   (pas de popup cookies)')
-
-    page.screenshot(path='screenshot_2_after_cookies.png')
-    print('📸 Screenshot 2 sauvegardé')
-
-    # ── ÉTAPE 3 : Résoudre le captcha ─────────────────────────────────────────
-    print('🤖 Résolution du captcha Cloudflare...')
-    sb.solve_captcha()
-    time.sleep(3)
-    page.screenshot(path='screenshot_3_after_captcha.png')
-    print('📸 Screenshot 3 sauvegardé')
-
-    # ── ÉTAPE 4 : Remplir les identifiants ────────────────────────────────────
-    print('✍️  Saisie des identifiants...')
-    page.wait_for_selector('#email', timeout=15000)
-    page.fill('#email', email)
-    time.sleep(0.5)
-    page.fill('#password', password)
-    time.sleep(0.5)
-    page.screenshot(path='screenshot_4_form_filled.png')
-    print('📸 Screenshot 4 sauvegardé')
-
-    # ── ÉTAPE 5 : Connexion ───────────────────────────────────────────────────
-    print('🔓 Connexion en cours...')
-    page.locator("button[type='submit']").dispatch_event('click')
-
-    connecte = False
-    try:
-        page.wait_for_url('**/home**', timeout=15000)
-        connecte = True
-    except Exception:
+    # 2. Lancement de SeleniumBase avec le mode Anti-Détection (UC)
+    # On utilise context manager "with" pour s'assurer que le navigateur se ferme bien
+    with SB(uc=True, headless=True, slow_mode=True) as sb:
         try:
-            page.wait_for_selector('nav', timeout=5000)
-            connecte = True
-        except Exception:
-            pass
+            print("🚀 Démarrage du navigateur...")
+            url = "https://www.myfitnesspal.com/account/login"
+            sb.uc_open_with_reconnect(url, 4)
+            
+            # Petit temps d'attente pour laisser passer Cloudflare
+            time.sleep(5)
+            sb.save_screenshot("screenshot_1_page_chargement.png")
 
-    time.sleep(2)
-    page.screenshot(path='screenshot_5_result.png')
-    print('📸 Screenshot 5 sauvegardé')
-    print(f'   URL finale : {page.url}')
+            # 3. Tentative de connexion
+            print("🔑 Tentative de connexion...")
+            
+            # On attend que le champ email soit visible
+            if sb.is_element_visible('input#email'):
+                sb.type('input#email', email)
+                sb.type('input#password', password)
+                sb.save_screenshot("screenshot_2_champs_remplis.png")
+                
+                sb.click('button[type="submit"]')
+                print("Wait... redirection après login.")
+                time.sleep(10)
+            else:
+                print("⚠️ Champ login non trouvé. Possible blocage Cloudflare (Vérifie le screenshot_1).")
 
-    print()
-    if connecte:
-        print('✅ SUCCÈS — Connecté à MyFitnessPal !')
-    else:
-        print('❌ ÉCHEC — Connexion échouée.')
-        print('   👆 Ouvre screenshot_5_result.png pour voir ce qui bloque.')
-
-sb.quit()
-print('\n👋 Navigateur fermé.')
-EOF
-python mfp_login.py
+            # 4. Vérification finale
+            sb.save_screenshot("screenshot_3_apres_login.png")
+            
+            if
