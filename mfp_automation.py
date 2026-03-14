@@ -13,10 +13,8 @@ from bs4 import BeautifulSoup as bs
 def get_google_sheets_client():
     secret_json = os.environ.get("GOOGLE_CREDENTIALS")
     if not secret_json:
-        # Si on est en local, on cherche le fichier service_account.json
-        return gspread.service_account(filename='service_account.json')
-    
-    # Si on est sur GitHub
+        print("❌ Secret GOOGLE_CREDENTIALS absent.")
+        sys.exit(1)
     creds_dict = json.loads(secret_json)
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
@@ -28,24 +26,24 @@ def scrape_diary(page):
     soup = bs(html, 'lxml')
     try:
         td = soup.find_all('td', class_='first')
-        if len(td) < 4: return None
+        if not td: return None
+        # Cal, Prot, Lip, Glu (ordre habituel MFP)
         return (td[0].get_text(strip=True), td[3].get_text(strip=True), 
                 td[1].get_text(strip=True), td[2].get_text(strip=True))
     except:
         return None
 
 def main():
-    # Identifiants (GitHub Secrets ou Manuel)
-    email = os.environ.get('MFP_EMAIL') or input('📧 Email MyFitnessPal : ')
-    password = os.environ.get('MFP_PASSWORD') or getpass.getpass('🔑 Mot de passe : ')
+    email = os.environ.get('MFP_EMAIL') or input('📧 Email : ')
+    password = os.environ.get('MFP_PASSWORD') or getpass.getpass('🔑 Password : ')
 
-    # Localisation Chrome
+    # Localisation Chrome pour GitHub Actions
     chrome_paths = glob.glob('/home/codespace/.cache/ms-playwright/**/chrome', recursive=True) + \
                    glob.glob('/root/.cache/ms-playwright/**/chrome', recursive=True) + \
                    glob.glob('/usr/bin/google-chrome', recursive=True)
     chrome_path = chrome_paths[0] if chrome_paths else None
 
-    # Lancement identique à ton script qui marche
+    # On garde sb_cdp pour le captcha
     sb = sb_cdp.Chrome(headless=True, xvfb=True, browser_executable_path=chrome_path)
     endpoint_url = sb.get_endpoint_url()
 
@@ -54,61 +52,68 @@ def main():
             browser = p.chromium.connect_over_cdp(endpoint_url)
             page = browser.contexts[0].pages[0]
 
-            print('🌐 Ouverture de MyFitnessPal...')
+            print('🌐 Ouverture MyFitnessPal...')
             page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='domcontentloaded', timeout=60000)
             time.sleep(3)
 
-            # ── TA LOGIQUE DE COOKIES (QUI MARCHE) ──
+            # ── TA LOGIQUE DE COOKIES (RÉ-INSTALLÉE) ──
             print('🍪 Fermeture de la popup cookies...')
-            try:
-                # On essaie les deux IDs d'iframe connus au cas où ça change
-                for iframe_id in ['#sp_message_iframe_1182771', '#sp_message_iframe_1164399']:
-                    iframe = page.frame_locator(iframe_id)
+            # On liste les IDs possibles d'iframe pour être sûr
+            for frame_id in ['#sp_message_iframe_1182771', '#sp_message_iframe_1164399']:
+                try:
+                    iframe = page.frame_locator(frame_id)
                     for text in ['Accept All', 'Accepter tout', 'Accept', 'Accepter']:
-                        try:
-                            iframe.get_by_role('button', name=text).click(timeout=2000)
+                        btn = iframe.get_by_role('button', name=text)
+                        if btn.count() > 0:
+                            btn.click(timeout=3000)
                             print(f'   ✅ Cookies acceptés ({text})')
                             break
-                        except: pass
-            except: pass
+                except: continue
 
-            # ── TA LOGIQUE CAPTCHA ──
-            print('🤖 Résolution du captcha...')
+            # Captcha
+            print('🤖 Résolution captcha...')
             sb.solve_captcha()
             time.sleep(3)
 
-            # ── LOGIN ──
+            # Saisie identifiants
             print('✍️ Saisie des identifiants...')
             page.wait_for_selector('#email', timeout=15000)
             page.fill('#email', email)
             page.fill('#password', password)
+            
+            # ── TA LOGIQUE DE CLIC (DISPATCH) ──
             print('🔓 Connexion...')
             page.locator("button[type='submit']").dispatch_event('click')
-            
-            # Attente de redirection vers le journal
-            time.sleep(5)
-            page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='networkidle')
 
-            # ── PARTIE GOOGLE SHEETS ──
+            # Attente redirection
+            time.sleep(5)
+            # On s'assure d'être sur la bonne page pour le scrap
+            if "diary" not in page.url:
+                page.goto('https://www.myfitnesspal.com/fr/food/diary', wait_until='networkidle')
+
+            # Scraping & Sheets
             macros = scrape_diary(page)
             if macros:
                 cal, prot, lip, glu = macros
-                print(f"📊 Macros trouvées : {cal}kcal")
-                
+                print(f"✅ Données récupérées : {cal} kcal")
                 gc = get_google_sheets_client()
-                sh = gc.open("diete") # Vérifie que le nom est exact
+                sh = gc.open("diete")
                 ws = sh.sheet1
                 ws.update([[cal]], "D12")
                 ws.update([[lip]], "L12")
                 ws.update([[glu]], "M12")
                 ws.update([[prot]], "C12")
-                print("✅ Google Sheets mis à jour !")
-            else:
-                print("❌ Impossible de lire les macros sur la page.")
+                print("📊 Google Sheets mis à jour !")
 
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
     finally:
-        if hasattr(sb, 'quit'): sb.quit()
-        elif hasattr(sb, 'stop'): sb.stop()
+        # Correction de l'AttributeError quit/stop
+        try:
+            if hasattr(sb, 'stop'): sb.stop()
+            elif hasattr(sb, 'quit'): sb.quit()
+        except: pass
+        print("👋 Session terminée.")
 
 if __name__ == "__main__":
     main()
