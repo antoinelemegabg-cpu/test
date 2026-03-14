@@ -1,0 +1,48 @@
+cat > main.py << 'EOF'
+import os, json, gspread
+from login import login
+from google.oauth2.service_account import Credentials
+from bs4 import BeautifulSoup as bs
+
+def scrape_diary(page):
+    print('🕷️ Scraping des données...')
+    html = page.content()
+    soup = bs(html, 'lxml')
+    td = soup.find_all('td', class_='first')
+    
+    try:
+        calorie = td[0].string
+        lipide = td[1].string
+        glucide = td[2].string
+        proteine = td[3].string
+        return calorie, lipide, glucide, proteine
+    except Exception as e:
+        print(f"Erreur scraping: {e}")
+        return "0", "0", "0", "0"
+
+try:
+    # Connexion via login.py
+    page, sb = login()
+    
+    # Récupération des données
+    cal, lip, glu, pro = scrape_diary(page)
+    print(f"📊 Données trouvées : {cal} kcal")
+
+    # Connexion Google Sheets via Secret
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds_json = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+    creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
+    ws = gspread.authorize(creds).open("diete").sheet1
+
+    # Mise à jour des cellules
+    ws.update([[cal]], "D12")
+    ws.update([[lip]], "L12")
+    ws.update([[glu]], "M12")
+    ws.update([[pro]], "C12")
+    
+    print("✅ Google Sheet mis à jour avec succès !")
+    sb.quit()
+
+except Exception as e:
+    print(f"❌ Erreur générale : {e}")
+EOF
